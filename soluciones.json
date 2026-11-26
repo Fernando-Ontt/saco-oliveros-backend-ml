@@ -1,0 +1,215 @@
+{
+  "advertencia": "Los resultados presentados corresponden a simulaciones de diseño y no constituyen efectividad clínica o pedagógica real.",
+  "perfiles": [
+    {
+      "motivo": "Bajo rendimiento",
+      "acciones": [
+        {
+          "accion": "Plan de recuperación",
+          "pct_mejoro": 0.65,
+          "n_casos": 326,
+          "variacion_media": 0.86
+        },
+        {
+          "accion": "Seguimiento semanal",
+          "pct_mejoro": 0.57,
+          "n_casos": 343,
+          "variacion_media": 0.66
+        },
+        {
+          "accion": "Compromiso con el estudiante",
+          "pct_mejoro": 0.48,
+          "n_casos": 300,
+          "variacion_media": 0.54
+        },
+        {
+          "accion": "Orientación",
+          "pct_mejoro": 0.36,
+          "n_casos": 267,
+          "variacion_media": 0.37
+        },
+        {
+          "accion": "Citación al apoderado",
+          "pct_mejoro": 0.35,
+          "n_casos": 308,
+          "variacion_media": 0.35
+        }
+      ]
+    },
+    {
+      "motivo": "Conducta",
+      "acciones": [
+        {
+          "accion": "Compromiso con el estudiante",
+          "pct_mejoro": 0.7,
+          "n_casos": 163,
+          "variacion_media": 0.95
+        },
+        {
+          "accion": "Citación al apoderado",
+          "pct_mejoro": 0.58,
+          "n_casos": 175,
+          "variacion_media": 0.77
+        },
+        {
+          "accion": "Seguimiento semanal",
+          "pct_mejoro": 0.41,
+          "n_casos": 142,
+          "variacion_media": 0.34
+        },
+        {
+          "accion": "Orientación",
+          "pct_mejoro": 0.37,
+          "n_casos": 129,
+          "variacion_media": 0.3
+        },
+        {
+          "accion": "Plan de recuperación",
+          "pct_mejoro": 0.36,
+          "n_casos": 132,
+          "variacion_media": 0.42
+        }
+      ]
+    },
+    {
+      "motivo": "Inasistencias",
+      "acciones": [
+        {
+          "accion": "Citación al apoderado",
+          "pct_mejoro": 0.63,
+          "n_casos": 213,
+          "variacion_media": 0.88
+        },
+        {
+          "accion": "Seguimiento semanal",
+          "pct_mejoro": 0.46,
+          "n_casos": 218,
+          "variacion_media": 0.62
+        },
+        {
+          "accion": "Compromiso con el estudiante",
+          "pct_mejoro": 0.42,
+          "n_casos": 200,
+          "variacion_media": 0.39
+        },
+        {
+          "accion": "Plan de recuperación",
+          "pct_mejoro": 0.34,
+          "n_casos": 179,
+          "variacion_media": 0.32
+        },
+        {
+          "accion": "Orientación",
+          "pct_mejoro": 0.32,
+          "n_casos": 215,
+          "variacion_media": 0.28
+        }
+      ]
+    },
+    {
+      "motivo": "Orientación vocacional",
+      "acciones": [
+        {
+          "accion": "Orientación",
+          "pct_mejoro": 0.7,
+          "n_casos": 56,
+          "variacion_media": 0.81
+        },
+        {
+          "accion": "Seguimiento semanal",
+          "pct_mejoro": 0.43,
+          "n_casos": 37,
+          "variacion_media": 0.44
+        },
+        {
+          "accion": "Compromiso con el estudiante",
+          "pct_mejoro": 0.43,
+          "n_casos": 47,
+          "variacion_media": 0.63
+        },
+        {
+          "accion": "Plan de recuperación",
+          "pct_mejoro": 0.33,
+          "n_casos": 46,
+          "variacion_media": 0.23
+        },
+        {
+          "accion": "Citación al apoderado",
+          "pct_mejoro": 0.3,
+          "n_casos": 60,
+          "variacion_media": 0.18
+        }
+      ]
+    },
+    {
+      "motivo": "Situación familiar",
+      "acciones": [
+        {
+          "accion": "Citación al apoderado",
+          "pct_mejoro": 0.61,
+          "n_casos": 113,
+          "variacion_media": 0.68
+        },
+        {
+          "accion": "Orientación",
+          "pct_mejoro": 0.46,
+          "n_casos": 138,
+          "variacion_media": 0.58
+        },
+        {
+          "accion": "Seguimiento semanal",
+          "pct_mejoro": 0.39,
+          "n_casos": 96,
+          "variacion_media": 0.38
+        },
+        {
+          "accion": "Plan de recuperación",
+          "pct_mejoro": 0.35,
+          "n_casos": 112,
+          "variacion_media": 0.46
+        },
+        {
+          "accion": "Compromiso con el estudiante",
+          "pct_mejoro": 0.34,
+          "n_casos": 122,
+          "variacion_media": 0.36
+        }
+      ]
+    },
+    {
+      "motivo": "Socioemocional",
+      "acciones": [
+        {
+          "accion": "Orientación",
+          "pct_mejoro": 0.63,
+          "n_casos": 143,
+          "variacion_media": 0.78
+        },
+        {
+          "accion": "Seguimiento semanal",
+          "pct_mejoro": 0.47,
+          "n_casos": 137,
+          "variacion_media": 0.66
+        },
+        {
+          "accion": "Citación al apoderado",
+          "pct_mejoro": 0.35,
+          "n_casos": 141,
+          "variacion_media": 0.33
+        },
+        {
+          "accion": "Plan de recuperación",
+          "pct_mejoro": 0.33,
+          "n_casos": 143,
+          "variacion_media": 0.36
+        },
+        {
+          "accion": "Compromiso con el estudiante",
+          "pct_mejoro": 0.3,
+          "n_casos": 148,
+          "variacion_media": 0.23
+        }
+      ]
+    }
+  ]
+}
