@@ -37,6 +37,16 @@ app = FastAPI(
     title="API Alerta Temprana y Patrones de Solución - Saco Oliveros",
     version="1.0.0",
 )
+app = FastAPI(
+    title="API Alerta Temprana y Patrones de Solución - Saco Oliveros",
+    version="1.0.0",
+)
+from ia_explicacion import router as ia_explicacion_router
+app.include_router(ia_explicacion_router)
+
+
+
+# Aquí sigue tu CORSMiddleware y tus rutas anteriores intactas...
 
 # Habilitar CORS para conectar con React
 app.add_middleware(
