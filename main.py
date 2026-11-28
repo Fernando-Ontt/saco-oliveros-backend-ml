@@ -1,5 +1,6 @@
 import json
 import sqlite3
+from secciones import router as secciones_router
 from datetime import date, datetime
 from pathlib import Path
 from typing import Literal, Optional
@@ -44,6 +45,7 @@ app = FastAPI(
     title="API Alerta Temprana y Patrones de Solución - Saco Oliveros",
     version="1.0.0",
 )
+app.include_router(secciones_router)
 from ia_explicacion import router as ia_explicacion_router
 app.include_router(ia_explicacion_router)
 
