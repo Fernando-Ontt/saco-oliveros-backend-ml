@@ -15,6 +15,8 @@ from explainability import (
 )
 from features import FEATURES, UMBRAL_RIESGO, clasificar_nivel, extraer_features_matricula
 from schemas import (
+    AsistenciaCreate,
+    CalificacionCreate,
     ContactoCreate,
     DerivacionCreate,
     DerivacionUpdate,
@@ -24,6 +26,7 @@ from schemas import (
     PrediccionRequest,
     PrediccionResponse,
     RecalcularRiesgoRequest,
+    RiesgoResultado,
     SimulacionRequest,
     TutoriaCreate,
 )
@@ -608,7 +611,10 @@ def listar_derivaciones(
 
 @app.post("/estudiantes/{id_matricula}/evidencias", status_code=201)
 def registrar_evidencia(id_matricula: int, payload: EvidenciaCreate):
-    """Registra una observación de conducta (evidencia) para un estudiante matriculado."""
+    """
+    Registra una observación de conducta (evidencia) para un estudiante matriculado,
+    recalcula el riesgo con el modelo ML y devuelve el nuevo nivel junto con el registro.
+    """
     conn = get_conn()
     try:
         _ensure_exists(conn, "matricula", "id_matricula", id_matricula, "Matrícula")
@@ -627,10 +633,13 @@ def registrar_evidencia(id_matricula: int, payload: EvidenciaCreate):
         creado = conn.execute(
             "SELECT * FROM observacion_conducta WHERE id_observacion = ?", (cur.lastrowid,)
         ).fetchone()
+        riesgo = _recalcular_con_respuesta(conn, id_matricula)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
     finally:
         conn.close()
 
-    return dict(creado)
+    return {"observacion": dict(creado), "riesgo": riesgo}
 
 
 @app.post("/estudiantes/{id_matricula}/tutorias", status_code=201)
@@ -901,6 +910,126 @@ def simular_riesgo(id_matricula: int, payload: SimulacionRequest):
         "variables_modificadas": aplicadas,
         "factores_simulados": detectar_factores(X_simulado.iloc[0]),
     }
+
+
+def _nivel_anterior(conn: sqlite3.Connection, id_matricula: int) -> Optional[str]:
+    """Devuelve el último nivel de riesgo guardado antes del recálculo, o None si no hay."""
+    row = conn.execute(
+        "SELECT nivel FROM riesgo WHERE id_matricula = ? ORDER BY id_periodo DESC LIMIT 1",
+        (id_matricula,),
+    ).fetchone()
+    return row["nivel"] if row else None
+
+
+def _recalcular_con_respuesta(conn: sqlite3.Connection, id_matricula: int) -> dict:
+    """
+    Recalcula el riesgo, persiste en BD y devuelve un dict con nivel_anterior y nivel_cambio.
+    Llama a esta función DESPUÉS de hacer commit de la evidencia (calificacion/asistencia/conducta),
+    pero ANTES de cerrar la conexión.
+    """
+    nivel_prev = _nivel_anterior(conn, id_matricula)
+    nuevo = _recalcular_y_guardar(conn, id_matricula)
+    conn.commit()
+    nivel_cambio = nivel_prev is not None and nivel_prev != nuevo["nivel"]
+    return {
+        "id_matricula": id_matricula,
+        "probabilidad": round(float(nuevo["probabilidad"]), 4),
+        "nivel": nuevo["nivel"],
+        "nivel_anterior": nivel_prev,
+        "nivel_cambio": nivel_cambio,
+        "factores": nuevo.get("factores", ""),
+        "fecha_prediccion": nuevo.get("fecha_prediccion", ""),
+    }
+
+
+@app.post("/estudiantes/{id_matricula}/calificaciones", status_code=201)
+def registrar_calificacion(id_matricula: int, payload: CalificacionCreate):
+    """
+    Registra una calificación para el estudiante, recalcula el riesgo con el modelo ML
+    y devuelve tanto el registro creado como el nuevo nivel de riesgo.
+    """
+    conn = get_conn()
+    try:
+        _ensure_exists(conn, "matricula", "id_matricula", id_matricula, "Matrícula")
+
+        if payload.id_curso is not None:
+            _ensure_exists(conn, "curso", "id_curso", payload.id_curso, "Curso")
+            id_curso = payload.id_curso
+        elif payload.curso:
+            row_c = conn.execute(
+                "SELECT id_curso FROM curso WHERE LOWER(nombre) = LOWER(?)",
+                (payload.curso.strip(),),
+            ).fetchone()
+            if not row_c:
+                raise HTTPException(status_code=404, detail=f"Curso '{payload.curso}' no encontrado")
+            id_curso = row_c["id_curso"]
+        else:
+            raise HTTPException(status_code=400, detail="Debe enviar id_curso o curso")
+
+        id_periodo = _resolver_id_periodo(conn, id_matricula, payload.id_periodo)
+
+        fecha = payload.fecha or _hoy()
+        cur = conn.execute(
+            """
+            INSERT INTO calificacion (id_matricula, id_curso, id_periodo, tipo_evaluacion, fecha, nota)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (id_matricula, id_curso, id_periodo, payload.tipo_evaluacion, fecha, payload.nota),
+        )
+        conn.commit()
+        creado = conn.execute(
+            "SELECT * FROM calificacion WHERE id_calificacion = ?", (cur.lastrowid,)
+        ).fetchone()
+        riesgo = _recalcular_con_respuesta(conn, id_matricula)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    finally:
+        conn.close()
+
+    return {"calificacion": dict(creado), "riesgo": riesgo}
+
+
+@app.post("/estudiantes/{id_matricula}/asistencias", status_code=201)
+def registrar_asistencia(id_matricula: int, payload: AsistenciaCreate):
+    """
+    Registra un registro de asistencia para el estudiante, recalcula el riesgo con el modelo ML
+    y devuelve tanto el registro creado como el nuevo nivel de riesgo.
+    """
+    conn = get_conn()
+    try:
+        _ensure_exists(conn, "matricula", "id_matricula", id_matricula, "Matrícula")
+
+        # Evitar duplicado por fecha
+        existente = conn.execute(
+            "SELECT id_asistencia FROM asistencia WHERE id_matricula = ? AND fecha = ?",
+            (id_matricula, payload.fecha),
+        ).fetchone()
+        if existente:
+            raise HTTPException(
+                status_code=409,
+                detail=f"Ya existe un registro de asistencia para la matrícula {id_matricula} en la fecha {payload.fecha}.",
+            )
+
+        cur = conn.execute(
+            """
+            INSERT INTO asistencia (id_matricula, fecha, estado, hora_ingreso, medio)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (id_matricula, payload.fecha, payload.estado, payload.hora_ingreso, payload.medio),
+        )
+        conn.commit()
+        creado = conn.execute(
+            "SELECT * FROM asistencia WHERE id_asistencia = ?", (cur.lastrowid,)
+        ).fetchone()
+        riesgo = _recalcular_con_respuesta(conn, id_matricula)
+    except HTTPException:
+        raise
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    finally:
+        conn.close()
+
+    return {"asistencia": dict(creado), "riesgo": riesgo}
 
 
 @app.post("/estudiantes/{id_matricula}/recalcular-riesgo")
