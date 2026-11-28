@@ -14,7 +14,14 @@ from explainability import (
     explicar_riesgo_matricula,
     obtener_importancia_global,
 )
-from features import FEATURES, UMBRAL_RIESGO, clasificar_nivel, extraer_features_matricula
+from features import (
+    BIMESTRE_ACTUAL,
+    FEATURES,
+    TOTAL_BIMESTRES,
+    UMBRAL_RIESGO,
+    clasificar_nivel,
+    extraer_features_matricula,
+)
 from schemas import (
     AsistenciaCreate,
     CalificacionCreate,
@@ -155,7 +162,13 @@ def _buscar_recomendaciones(motivo: str) -> tuple[dict, list[dict], str]:
 
 @app.get("/")
 def health():
-    return {"status": "ok", "modelo": "Random Forest", "umbral": UMBRAL_RIESGO}
+    return {
+        "status": "ok",
+        "modelo": "Random Forest",
+        "umbral": UMBRAL_RIESGO,
+        "bimestre_actual": BIMESTRE_ACTUAL,
+        "total_bimestres": TOTAL_BIMESTRES,
+    }
 
 
 @app.post("/predecir", response_model=PrediccionResponse)
@@ -233,6 +246,7 @@ def listar_estudiantes(
     anio: Optional[int] = None,
     grado: Optional[int] = Query(default=None, ge=1, le=5),
     id_seccion: Optional[int] = None,
+    letra: Optional[str] = None,
     nivel: Optional[Literal["Bajo", "Medio", "Alto"]] = None,
     q: Optional[str] = None,
     limit: int = Query(default=100, ge=1, le=500),
@@ -251,6 +265,9 @@ def listar_estudiantes(
     if id_seccion is not None:
         filtros.append("m.id_seccion = ?")
         params.append(id_seccion)
+    if letra is not None:
+        filtros.append("UPPER(s.letra) = UPPER(?)")
+        params.append(letra.strip())
     if nivel is not None:
         filtros.append("r.nivel = ?")
         params.append(nivel)
@@ -270,8 +287,18 @@ def listar_estudiantes(
             f"""
             SELECT m.id_matricula, m.id_estudiante, e.id_anonimo, e.nombres, e.apellidos,
                    e.documento_simulado, e.sexo, m.anio, s.id_seccion, s.grado, s.letra,
-                   se.nombre AS sede, r.probabilidad, r.nivel, r.nivel_regla, r.fecha_prediccion
+                   se.nombre AS sede, r.probabilidad, r.nivel, r.nivel_regla, r.fecha_prediccion,
+                   COALESCE(af.total_faltas, 0) AS total_faltas,
+                   vw.prom_b1, vw.prom_b2, vw.prom_b12,
+                   COALESCE(vw.n_obs_graves, 0) AS n_obs_graves
             {_BASE_ESTUDIANTES_SQL}
+            LEFT JOIN (
+                SELECT id_matricula,
+                       SUM(CASE WHEN estado IN ('Falta justificada', 'Falta injustificada') THEN 1 ELSE 0 END) AS total_faltas
+                FROM asistencia
+                GROUP BY id_matricula
+            ) af ON af.id_matricula = m.id_matricula
+            LEFT JOIN vw_dataset_modelo vw ON vw.id_matricula = m.id_matricula
             {where_sql}
             ORDER BY COALESCE(r.probabilidad, 0) DESC, e.apellidos ASC, e.nombres ASC
             LIMIT ? OFFSET ?
@@ -362,8 +389,8 @@ def obtener_historial_estudiante(id_matricula: int):
             """
             SELECT id_asistencia, fecha, estado, hora_ingreso, medio
             FROM asistencia
-            WHERE id_matricula = ? AND estado <> 'Presente'
-            ORDER BY fecha DESC LIMIT 30
+            WHERE id_matricula = ?
+            ORDER BY fecha DESC
             """,
             (id_matricula,),
         ).fetchall()
@@ -495,6 +522,7 @@ def listar_alertas(
     anio: Optional[int] = None,
     grado: Optional[int] = Query(default=None, ge=1, le=5),
     id_seccion: Optional[int] = None,
+    letra: Optional[str] = None,
     limit: int = Query(default=100, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
 ):
@@ -514,6 +542,9 @@ def listar_alertas(
     if id_seccion is not None:
         filtros.append("m.id_seccion = ?")
         params.append(id_seccion)
+    if letra is not None:
+        filtros.append("UPPER(s.letra) = UPPER(?)")
+        params.append(letra.strip())
 
     where_sql = f"WHERE {' AND '.join(filtros)}"
 
@@ -798,10 +829,28 @@ def _nivel_regla_desde_row(df_row) -> str:
     return "Bajo"
 
 
-def _resolver_id_periodo(conn: sqlite3.Connection, id_matricula: int, id_periodo: Optional[int]) -> int:
+def _resolver_id_periodo(
+    conn: sqlite3.Connection,
+    id_matricula: int,
+    id_periodo: Optional[int],
+    bimestre: Optional[int] = None,
+) -> int:
     if id_periodo is not None:
         _ensure_exists(conn, "periodo", "id_periodo", id_periodo, "Periodo")
         return id_periodo
+
+    bimestre_objetivo = bimestre if bimestre is not None else BIMESTRE_ACTUAL
+    row_p = conn.execute(
+        """
+        SELECT p.id_periodo
+        FROM matricula m
+        JOIN periodo p ON p.anio = m.anio AND p.bimestre = ?
+        WHERE m.id_matricula = ?
+        """,
+        (bimestre_objetivo, id_matricula),
+    ).fetchone()
+    if row_p:
+        return row_p["id_periodo"]
 
     row_r = conn.execute(
         "SELECT id_periodo FROM riesgo WHERE id_matricula = ? ORDER BY id_periodo DESC LIMIT 1",
@@ -810,18 +859,7 @@ def _resolver_id_periodo(conn: sqlite3.Connection, id_matricula: int, id_periodo
     if row_r:
         return row_r["id_periodo"]
 
-    row_p = conn.execute(
-        """
-        SELECT p.id_periodo
-        FROM matricula m
-        JOIN periodo p ON p.anio = m.anio AND p.bimestre = 2
-        WHERE m.id_matricula = ?
-        """,
-        (id_matricula,),
-    ).fetchone()
-    if not row_p:
-        raise HTTPException(status_code=404, detail=f"No se encontró periodo para la matrícula {id_matricula}")
-    return row_p["id_periodo"]
+    raise HTTPException(status_code=404, detail=f"No se encontró periodo para la matrícula {id_matricula}")
 
 
 def _recalcular_y_guardar(conn: sqlite3.Connection, id_matricula: int, id_periodo: Optional[int] = None) -> dict:
@@ -971,7 +1009,7 @@ def registrar_calificacion(id_matricula: int, payload: CalificacionCreate):
         else:
             raise HTTPException(status_code=400, detail="Debe enviar id_curso o curso")
 
-        id_periodo = _resolver_id_periodo(conn, id_matricula, payload.id_periodo)
+        id_periodo = _resolver_id_periodo(conn, id_matricula, payload.id_periodo, payload.bimestre)
 
         fecha = payload.fecha or _hoy()
         cur = conn.execute(

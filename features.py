@@ -1,6 +1,16 @@
 import sqlite3
 import pandas as pd
 
+# Configuración única del año escolar (cambiar BIMESTRE_ACTUAL a 4 cuando inicie el 4.º bimestre)
+TOTAL_BIMESTRES = 4
+BIMESTRE_ACTUAL = 3
+
+PESOS_EVALUACION = {
+    "Practica": 0.30,
+    "Simulacro": 0.20,
+    "Examen": 0.50,
+}
+
 UMBRAL_RIESGO = 0.4064030005224275
 
 FEATURES = [
@@ -33,7 +43,7 @@ corte AS (
 nt AS (
     SELECT c.id_matricula, c.id_curso, p.bimestre, c.tipo_evaluacion, AVG(c.nota) AS nota
     FROM calificacion c JOIN periodo p ON p.id_periodo = c.id_periodo
-    WHERE c.id_matricula = :id_matricula AND p.bimestre <= 2 AND c.nota IS NOT NULL
+    WHERE c.id_matricula = :id_matricula AND p.bimestre <= :bimestre_actual AND c.nota IS NOT NULL
     GROUP BY 1, 2, 3, 4
 ),
 pcb AS (
@@ -46,9 +56,17 @@ acad AS (
     SELECT p.id_matricula,
            AVG(CASE WHEN p.bimestre = 1 THEN p.prom END)                   AS prom_b1,
            AVG(CASE WHEN p.bimestre = 2 THEN p.prom END)                   AS prom_b2,
+           AVG(CASE WHEN p.bimestre = :bimestre_actual THEN p.prom END)    AS prom_actual,
            AVG(p.prom)                                                     AS prom_b12,
-           MIN(CASE WHEN p.bimestre = 2 THEN p.prom END)                   AS min_curso_b2,
-           SUM(CASE WHEN p.bimestre = 2 AND p.prom < 11 THEN 1 ELSE 0 END) AS cursos_bajo_11_b2,
+           COALESCE(
+               MIN(CASE WHEN p.bimestre = :bimestre_actual THEN p.prom END),
+               MIN(CASE WHEN p.bimestre = 2 THEN p.prom END)
+           )                                                               AS min_curso_b2,
+           CASE
+               WHEN SUM(CASE WHEN p.bimestre = :bimestre_actual THEN 1 ELSE 0 END) > 0
+               THEN SUM(CASE WHEN p.bimestre = :bimestre_actual AND p.prom < 11 THEN 1 ELSE 0 END)
+               ELSE SUM(CASE WHEN p.bimestre = 2 AND p.prom < 11 THEN 1 ELSE 0 END)
+           END                                                             AS cursos_bajo_11_b2,
            AVG(CASE WHEN cu.nombre = 'Matemática'   THEN p.prom END)       AS prom_matematica,
            AVG(CASE WHEN cu.nombre = 'Comunicación' THEN p.prom END)       AS prom_comunicacion
     FROM pcb p JOIN curso cu ON cu.id_curso = p.id_curso
@@ -59,7 +77,7 @@ dist AS (
            AVG(c.nota * c.nota) - AVG(c.nota) * AVG(c.nota)               AS varianza_notas,
            AVG(CASE WHEN c.tipo_evaluacion = 'Simulacro' THEN c.nota END) AS prom_simulacros
     FROM calificacion c JOIN periodo p ON p.id_periodo = c.id_periodo
-    WHERE c.id_matricula = :id_matricula AND p.bimestre <= 2 AND c.nota IS NOT NULL
+    WHERE c.id_matricula = :id_matricula AND p.bimestre <= :bimestre_actual AND c.nota IS NOT NULL
     GROUP BY c.id_matricula
 ),
 asi AS (
@@ -127,7 +145,7 @@ SELECT
     e.tipo_ingreso, e.colegio_procedencia, e.nota_diagnostico_ingreso, e.zona, e.distancia_km, e.tiempo_traslado_min,
     e.convive_con, e.educacion_apoderado, e.apoyo_familiar, e.internet_casa, e.horas_estudio_sem,
     e.aspira_universidad, e.relacion_familiar, e.salud, e.actividades_extra, e.nro_hermanos,
-    a.prom_b1, a.prom_b2, a.prom_b12, a.prom_b2 - a.prom_b1 AS tendencia_notas,
+    a.prom_b1, a.prom_b2, a.prom_b12, COALESCE(a.prom_actual, a.prom_b2) - a.prom_b1 AS tendencia_notas,
     a.min_curso_b2, a.cursos_bajo_11_b2, a.prom_matematica, a.prom_comunicacion,
     d.varianza_notas, d.prom_simulacros,
     s2.pct_asistencia_b12, s2.pct_asistencia_b1, s2.pct_asistencia_b2,
@@ -164,7 +182,11 @@ CAT_COLS = {"tipo_ingreso", "colegio_procedencia", "zona", "convive_con", "educa
 
 def extraer_features_matricula(conn: sqlite3.Connection, id_matricula: int) -> pd.DataFrame:
     """Devuelve un DataFrame de 1 fila con las 59 columnas exactas del modelo y tipos idénticos a Colab."""
-    df = pd.read_sql_query(QUERY_FEATURES, conn, params={"id_matricula": id_matricula})
+    df = pd.read_sql_query(
+        QUERY_FEATURES,
+        conn,
+        params={"id_matricula": id_matricula, "bimestre_actual": BIMESTRE_ACTUAL},
+    )
     if df.empty:
         raise ValueError(f"No se encontró la matrícula con id_matricula={id_matricula}")
     df = df[FEATURES].copy()
