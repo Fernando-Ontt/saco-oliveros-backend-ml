@@ -243,6 +243,7 @@ def listar_estudiantes(
     anio: Optional[int] = None,
     grado: Optional[int] = Query(default=None, ge=1, le=5),
     id_seccion: Optional[int] = None,
+    letra: Optional[str] = None,
     nivel: Optional[Literal["Bajo", "Medio", "Alto"]] = None,
     q: Optional[str] = None,
     limit: int = Query(default=100, ge=1, le=500),
@@ -261,6 +262,9 @@ def listar_estudiantes(
     if id_seccion is not None:
         filtros.append("m.id_seccion = ?")
         params.append(id_seccion)
+    if letra is not None:
+        filtros.append("UPPER(s.letra) = UPPER(?)")
+        params.append(letra.strip())
     if nivel is not None:
         filtros.append("r.nivel = ?")
         params.append(nivel)
@@ -280,8 +284,18 @@ def listar_estudiantes(
             f"""
             SELECT m.id_matricula, m.id_estudiante, e.id_anonimo, e.nombres, e.apellidos,
                    e.documento_simulado, e.sexo, m.anio, s.id_seccion, s.grado, s.letra,
-                   se.nombre AS sede, r.probabilidad, r.nivel, r.nivel_regla, r.fecha_prediccion
+                   se.nombre AS sede, r.probabilidad, r.nivel, r.nivel_regla, r.fecha_prediccion,
+                   COALESCE(af.total_faltas, 0) AS total_faltas,
+                   vw.prom_b1, vw.prom_b2, vw.prom_b12,
+                   COALESCE(vw.n_obs_graves, 0) AS n_obs_graves
             {_BASE_ESTUDIANTES_SQL}
+            LEFT JOIN (
+                SELECT id_matricula,
+                       SUM(CASE WHEN estado IN ('Falta justificada', 'Falta injustificada') THEN 1 ELSE 0 END) AS total_faltas
+                FROM asistencia
+                GROUP BY id_matricula
+            ) af ON af.id_matricula = m.id_matricula
+            LEFT JOIN vw_dataset_modelo vw ON vw.id_matricula = m.id_matricula
             {where_sql}
             ORDER BY COALESCE(r.probabilidad, 0) DESC, e.apellidos ASC, e.nombres ASC
             LIMIT ? OFFSET ?
@@ -372,8 +386,8 @@ def obtener_historial_estudiante(id_matricula: int):
             """
             SELECT id_asistencia, fecha, estado, hora_ingreso, medio
             FROM asistencia
-            WHERE id_matricula = ? AND estado <> 'Presente'
-            ORDER BY fecha DESC LIMIT 30
+            WHERE id_matricula = ?
+            ORDER BY fecha DESC
             """,
             (id_matricula,),
         ).fetchall()
@@ -505,6 +519,7 @@ def listar_alertas(
     anio: Optional[int] = None,
     grado: Optional[int] = Query(default=None, ge=1, le=5),
     id_seccion: Optional[int] = None,
+    letra: Optional[str] = None,
     limit: int = Query(default=100, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
 ):
@@ -524,6 +539,9 @@ def listar_alertas(
     if id_seccion is not None:
         filtros.append("m.id_seccion = ?")
         params.append(id_seccion)
+    if letra is not None:
+        filtros.append("UPPER(s.letra) = UPPER(?)")
+        params.append(letra.strip())
 
     where_sql = f"WHERE {' AND '.join(filtros)}"
 
