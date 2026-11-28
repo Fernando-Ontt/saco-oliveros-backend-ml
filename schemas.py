@@ -59,6 +59,7 @@ class CalificacionCreate(BaseModel):
     id_curso: Optional[int] = None
     curso: Optional[str] = None
     id_periodo: Optional[int] = None
+    bimestre: Optional[int] = Field(default=None, ge=1, le=4)
     tipo_evaluacion: Literal["Practica", "Simulacro", "Examen"] = "Practica"
     fecha: Optional[str] = None
     nota: float = Field(..., ge=0, le=20)

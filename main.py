@@ -14,7 +14,14 @@ from explainability import (
     explicar_riesgo_matricula,
     obtener_importancia_global,
 )
-from features import FEATURES, UMBRAL_RIESGO, clasificar_nivel, extraer_features_matricula
+from features import (
+    BIMESTRE_ACTUAL,
+    FEATURES,
+    TOTAL_BIMESTRES,
+    UMBRAL_RIESGO,
+    clasificar_nivel,
+    extraer_features_matricula,
+)
 from schemas import (
     AsistenciaCreate,
     CalificacionCreate,
@@ -152,7 +159,13 @@ def _buscar_recomendaciones(motivo: str) -> tuple[dict, list[dict], str]:
 
 @app.get("/")
 def health():
-    return {"status": "ok", "modelo": "Random Forest", "umbral": UMBRAL_RIESGO}
+    return {
+        "status": "ok",
+        "modelo": "Random Forest",
+        "umbral": UMBRAL_RIESGO,
+        "bimestre_actual": BIMESTRE_ACTUAL,
+        "total_bimestres": TOTAL_BIMESTRES,
+    }
 
 
 @app.post("/predecir", response_model=PrediccionResponse)
@@ -795,10 +808,28 @@ def _nivel_regla_desde_row(df_row) -> str:
     return "Bajo"
 
 
-def _resolver_id_periodo(conn: sqlite3.Connection, id_matricula: int, id_periodo: Optional[int]) -> int:
+def _resolver_id_periodo(
+    conn: sqlite3.Connection,
+    id_matricula: int,
+    id_periodo: Optional[int],
+    bimestre: Optional[int] = None,
+) -> int:
     if id_periodo is not None:
         _ensure_exists(conn, "periodo", "id_periodo", id_periodo, "Periodo")
         return id_periodo
+
+    bimestre_objetivo = bimestre if bimestre is not None else BIMESTRE_ACTUAL
+    row_p = conn.execute(
+        """
+        SELECT p.id_periodo
+        FROM matricula m
+        JOIN periodo p ON p.anio = m.anio AND p.bimestre = ?
+        WHERE m.id_matricula = ?
+        """,
+        (bimestre_objetivo, id_matricula),
+    ).fetchone()
+    if row_p:
+        return row_p["id_periodo"]
 
     row_r = conn.execute(
         "SELECT id_periodo FROM riesgo WHERE id_matricula = ? ORDER BY id_periodo DESC LIMIT 1",
@@ -807,18 +838,7 @@ def _resolver_id_periodo(conn: sqlite3.Connection, id_matricula: int, id_periodo
     if row_r:
         return row_r["id_periodo"]
 
-    row_p = conn.execute(
-        """
-        SELECT p.id_periodo
-        FROM matricula m
-        JOIN periodo p ON p.anio = m.anio AND p.bimestre = 2
-        WHERE m.id_matricula = ?
-        """,
-        (id_matricula,),
-    ).fetchone()
-    if not row_p:
-        raise HTTPException(status_code=404, detail=f"No se encontró periodo para la matrícula {id_matricula}")
-    return row_p["id_periodo"]
+    raise HTTPException(status_code=404, detail=f"No se encontró periodo para la matrícula {id_matricula}")
 
 
 def _recalcular_y_guardar(conn: sqlite3.Connection, id_matricula: int, id_periodo: Optional[int] = None) -> dict:
@@ -968,7 +988,7 @@ def registrar_calificacion(id_matricula: int, payload: CalificacionCreate):
         else:
             raise HTTPException(status_code=400, detail="Debe enviar id_curso o curso")
 
-        id_periodo = _resolver_id_periodo(conn, id_matricula, payload.id_periodo)
+        id_periodo = _resolver_id_periodo(conn, id_matricula, payload.id_periodo, payload.bimestre)
 
         fecha = payload.fecha or _hoy()
         cur = conn.execute(
