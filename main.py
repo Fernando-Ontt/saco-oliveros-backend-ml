@@ -54,9 +54,12 @@ app = FastAPI(
 )
 app.include_router(secciones_router)
 from ia_explicacion import router as ia_explicacion_router
+from riesgo_solucion_router import router as riesgo_solucion_router
+from tutoria_router import router as tutoria_router
+
 app.include_router(ia_explicacion_router)
-
-
+app.include_router(riesgo_solucion_router)
+app.include_router(tutoria_router)
 
 # Aquí sigue tu CORSMiddleware y tus rutas anteriores intactas...
 
